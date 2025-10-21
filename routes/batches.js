@@ -85,7 +85,7 @@ router.put("/:id", verifyAdmin, async (req, res) => {
     const { id } = req.params;
     const { title, state, manufacturer, quality, notes, manufacture_date, product_id, imageBase64 } = req.body;
 
-    console.log("UPDATE request received:", { id, body: req.body }); // Add this
+    console.log("UPDATE request received:", { id, body: req.body });
 
     let imageUrl = null;
     if (imageBase64) {
@@ -101,13 +101,13 @@ router.put("/:id", verifyAdmin, async (req, res) => {
     `;
     const values = [title, state, manufacturer, quality, notes, manufacture_date, product_id, imageUrl, id];
 
-    console.log("Executing query with values:", values); // Add this
+    console.log("Executing query with values:", values);
 
     db.query(query, values, (err, result) => {
       if (err) {
         console.error("Error updating batch:", err);
         console.error("Database error details:", err.message);
-        console.error("SQL State:", err.code); // Add this
+        console.error("SQL State:", err.code);
         return res.status(500).json({ error: "Database error: " + err.message });
       }
       if (result.rows.length === 0) {
