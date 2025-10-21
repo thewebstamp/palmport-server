@@ -17,14 +17,18 @@ dotenv.config();
 const app = express();
 
 app.use(cors({
-  origin: [`${process.env.APP_BASE_URL}`, 'http://localhost:3000'],
-  credentials: true
+  origin: ['https://palmport.vercel.app', 'http://localhost:3000']
 }));
-
-console.log('CORS origins:', process.env.APP_BASE_URL, 'http://localhost:3000');
-
 app.use(bodyParser.json({ limit: '10mb' }));
 app.use(bodyParser.urlencoded({ extended: true }));
+
+app.use((req, res, next) => {
+  console.log('CORS middleware hit for:', req.headers.origin);
+  res.header('Access-Control-Allow-Origin', 'https://palmport.vercel.app');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE');
+  res.header('Access-Control-Allow-Headers', 'Content-Type');
+  next();
+});
 
 // Ensure admin user exists at startup
 ensureAdminExists(process.env.ADMIN_EMAIL, process.env.ADMIN_PASSWORD);
