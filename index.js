@@ -16,7 +16,9 @@ import paymentRoutes from "./routes/payments.js";
 dotenv.config();
 const app = express();
 
-app.use(cors());
+app.use(cors({
+  origin: [`${process.env.APP_BASE_URL}`, 'http://localhost:3000']
+}));
 app.use(bodyParser.json({ limit: '10mb' }));
 app.use(bodyParser.urlencoded({ extended: true }));
 
