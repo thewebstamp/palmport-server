@@ -17,7 +17,8 @@ dotenv.config();
 const app = express();
 
 app.use(cors({
-  origin: ['https://palmport.vercel.app', 'http://localhost:3000']
+  origin: ['https://palmport.vercel.app', 'http://localhost:3000'],
+  credentials: true
 }));
 app.use(bodyParser.json({ limit: '10mb' }));
 app.use(bodyParser.urlencoded({ extended: true }));
