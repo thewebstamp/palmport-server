@@ -3,7 +3,9 @@ import db from "../utils/db.js";
 import QRCode from "qrcode";
 import { uploadToCloudinary } from "../utils/cloudinary.js";
 import { verifyAdmin } from "../utils/authUtils.js";
+import dotenv from "dotenv";
 
+dotenv.config();
 const router = express.Router();
 
 // GET all batches with product info
@@ -33,7 +35,7 @@ router.post("/", verifyAdmin, async (req, res) => {
     const imageUrl = imageBase64 ? await uploadToCloudinary(imageBase64) : null;
 
     // Generate QR Code
-    const batchUrl = `${process.env.CLIENT_URL}/trace/${batch_id}`;
+    const batchUrl = `${process.env.APP_BASE_URL}/trace/${batch_id}`;
     const qrCodeUrl = await QRCode.toDataURL(batchUrl);
 
     const query = `

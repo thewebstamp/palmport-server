@@ -243,6 +243,141 @@ router.get("/my-orders", verifyToken, (req, res) => {
   );
 });
 
+// Send status update emails to customers
+function sendOrderStatusUpdateEmail(order, previousStatus, newStatus) {
+  try {
+    const statusLabels = {
+      'pending': 'Pending',
+      'processing': 'Processing',
+      'shipped': 'Shipped',
+      'delivered': 'Delivered',
+      'cancelled': 'Cancelled',
+      'awaiting_contact': 'Awaiting Contact'
+    };
+
+    const statusDescriptions = {
+      'pending': 'Your order has been received and is being processed.',
+      'processing': 'We are currently preparing your order for shipment.',
+      'shipped': 'Your order has been shipped and is on its way to you.',
+      'delivered': 'Your order has been delivered successfully.',
+      'cancelled': 'Your order has been cancelled.',
+      'awaiting_contact': 'We are awaiting contact to confirm your order details.'
+    };
+
+    const emailHtml = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <style>
+          body { font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.6; color: #333; }
+          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+          .header { background: linear-gradient(135deg, #D84727, #2f7a32); color: white; padding: 20px; border-radius: 10px 10px 0 0; }
+          .content { background: #f9f9f9; padding: 20px; border-radius: 0 0 10px 10px; }
+          .order-details { background: white; padding: 15px; border-radius: 8px; margin: 15px 0; }
+          .status-update { background: #e8f5e8; border-left: 4px solid #2f7a32; padding: 15px; margin: 15px 0; }
+          .items-table { width: 100%; border-collapse: collapse; margin: 15px 0; }
+          .items-table th, .items-table td { padding: 10px; text-align: left; border-bottom: 1px solid #ddd; }
+          .items-table th { background: #f5f5f5; }
+          .status-badge { 
+            display: inline-block; 
+            padding: 8px 16px; 
+            border-radius: 20px; 
+            font-weight: bold; 
+            margin: 5px 0;
+          }
+          .pending { background: #fff3cd; color: #856404; }
+          .processing { background: #cce7ff; color: #004085; }
+          .shipped { background: #d1ecf1; color: #0c5460; }
+          .delivered { background: #d4edda; color: #155724; }
+          .cancelled { background: #f8d7da; color: #721c24; }
+          .awaiting_contact { background: #ffeaa7; color: #5c3b28; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>📦 Order Status Update</h1>
+            <p>Your order #${order.order_number} status has been updated</p>
+          </div>
+          
+          <div class="content">
+            <div class="status-update">
+              <h2>Status Update</h2>
+              <p>Your order status has been updated from <strong>${statusLabels[previousStatus]}</strong> to:</p>
+              <div class="status-badge ${newStatus}">${statusLabels[newStatus]}</div>
+              <p>${statusDescriptions[newStatus]}</p>
+            </div>
+
+            <div class="order-details">
+              <h2>Order Information</h2>
+              <p><strong>Order Number:</strong> #${order.order_number}</p>
+              <p><strong>Customer Name:</strong> ${order.customer_name}</p>
+              <p><strong>Order Date:</strong> ${new Date(order.created_at).toLocaleString()}</p>
+              <p><strong>Total Amount:</strong> ₦${order.total?.toLocaleString()}</p>
+            </div>
+
+            <div class="order-details">
+              <h2>Order Items</h2>
+              <table class="items-table">
+                <thead>
+                  <tr>
+                    <th>Product</th>
+                    <th>Size</th>
+                    <th>Quantity</th>
+                    <th>Price</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${order.items?.map(item => `
+                    <tr>
+                      <td>${item.name}</td>
+                      <td>${item.size}</td>
+                      <td>${item.quantity}</td>
+                      <td>₦${item.total?.toLocaleString()}</td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+
+            <div class="order-details">
+              <h2>Delivery Information</h2>
+              <p><strong>Address:</strong> ${order.address}, ${order.city}, ${order.state}</p>
+              <p><strong>Phone:</strong> ${order.phone}</p>
+              <p><strong>Email:</strong> ${order.email}</p>
+            </div>
+
+            <div style="text-align: center; margin-top: 20px; padding: 15px; background: white; border-radius: 8px;">
+              <p style="margin: 0; color: #666;">
+                Thank you for choosing PalmPort! If you have any questions, please contact us.
+              </p>
+            </div>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+
+    const mailOptions = {
+      from: `"PalmPort Order Updates" <${process.env.EMAIL_USER}>`,
+      to: order.email,
+      subject: `📦 Order Status Update - #${order.order_number} - ${statusLabels[newStatus]}`,
+      html: emailHtml
+    };
+
+    transporter.sendMail(mailOptions, (err, info) => {
+      if (err) {
+        console.error('Error sending order status update email:', err);
+      } else {
+        console.log(`Order status update email sent to ${order.email} for order ${order.order_number}`);
+      }
+    });
+
+  } catch (error) {
+    console.error('Error preparing order status update email:', error);
+  }
+}
+
 // PUT update order status (Admin)
 router.put("/:id/status", verifyAdmin, (req, res) => {
   const { id } = req.params;
@@ -260,40 +395,64 @@ router.put("/:id/status", verifyAdmin, (req, res) => {
     return res.status(400).json({ error: "Invalid payment status" });
   }
 
-  const query = `
-    UPDATE orders 
-    SET 
-      delivery_status = COALESCE($1, delivery_status), 
-      payment_status = COALESCE($2, payment_status),
-      updated_at = NOW()
-    WHERE id = $3 
-    RETURNING *
-  `;
+  // First, get the current order to know the previous status
+  const getOrderQuery = "SELECT * FROM orders WHERE id = $1";
 
-  const values = [delivery_status, payment_status, id];
-
-  console.log('Executing update query:', query);
-  console.log('With values:', values);
-
-  db.query(query, values, (err, result) => {
+  db.query(getOrderQuery, [id], (err, getOrderResult) => {
     if (err) {
-      console.error("Error updating order:", err);
-      return res.status(500).json({ error: "Database update error: " + err.message });
+      console.error("Error fetching current order:", err);
+      return res.status(500).json({ error: "Database error: " + err.message });
     }
 
-    if (result.rows.length === 0) {
-      console.error("No order found with ID:", id);
+    if (getOrderResult.rows.length === 0) {
       return res.status(404).json({ error: "Order not found" });
     }
 
-    console.log('Order updated successfully:', result.rows[0]);
-    res.json(result.rows[0]);
+    const currentOrder = getOrderResult.rows[0];
+    const previousStatus = currentOrder.delivery_status;
+
+    const updateQuery = `
+      UPDATE orders 
+      SET 
+        delivery_status = COALESCE($1, delivery_status), 
+        payment_status = COALESCE($2, payment_status),
+        updated_at = NOW()
+      WHERE id = $3 
+      RETURNING *
+    `;
+
+    const values = [delivery_status, payment_status, id];
+
+    console.log('Executing update query:', updateQuery);
+    console.log('With values:', values);
+
+    db.query(updateQuery, values, (err, result) => {
+      if (err) {
+        console.error("Error updating order:", err);
+        return res.status(500).json({ error: "Database update error: " + err.message });
+      }
+
+      if (result.rows.length === 0) {
+        console.error("No order found with ID:", id);
+        return res.status(404).json({ error: "Order not found" });
+      }
+
+      const updatedOrder = result.rows[0];
+      console.log('Order updated successfully:', updatedOrder);
+
+      // Send status update email if delivery status changed
+      if (delivery_status && delivery_status !== previousStatus) {
+        sendOrderStatusUpdateEmail(updatedOrder, previousStatus, delivery_status);
+      }
+
+      res.json(updatedOrder);
+    });
   });
 });
 
 // Whatsapp notification function
 function sendWhatsAppNotification(order) {
-  // Your business WhatsApp number from environment variable
+  // WhatsApp number from environment variable
   const businessWhatsAppNumber = process.env.WHATSAPP_BUSINESS_NUMBER || '2348123456789';
 
   // Create message for customer to send to business
