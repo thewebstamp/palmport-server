@@ -264,6 +264,21 @@ function sendOrderStatusUpdateEmail(order, previousStatus, newStatus) {
       'awaiting_contact': 'We are awaiting contact to confirm your order details.'
     };
 
+    // Handle items
+    let orderItems = [];
+    if (order.items) {
+      if (typeof order.items === 'string') {
+        try {
+          orderItems = JSON.parse(order.items);
+        } catch (e) {
+          console.error('Error parsing order items:', e);
+          orderItems = [];
+        }
+      } else if (Array.isArray(order.items)) {
+        orderItems = order.items;
+      }
+    }
+
     const emailHtml = `
       <!DOCTYPE html>
       <html>
@@ -291,6 +306,15 @@ function sendOrderStatusUpdateEmail(order, previousStatus, newStatus) {
           .delivered { background: #d4edda; color: #155724; }
           .cancelled { background: #f8d7da; color: #721c24; }
           .awaiting_contact { background: #ffeaa7; color: #5c3b28; }
+          .heritage-message { 
+            background: #fffaf5; 
+            border: 2px solid #ffe8d6; 
+            border-radius: 10px; 
+            padding: 15px; 
+            margin: 20px 0; 
+            text-align: center;
+            font-style: italic;
+          }
         </style>
       </head>
       <body>
@@ -306,6 +330,13 @@ function sendOrderStatusUpdateEmail(order, previousStatus, newStatus) {
               <p>Your order status has been updated from <strong>${statusLabels[previousStatus]}</strong> to:</p>
               <div class="status-badge ${newStatus}">${statusLabels[newStatus]}</div>
               <p>${statusDescriptions[newStatus]}</p>
+            </div>
+
+            <div class="heritage-message">
+              <p style="margin: 0; color: #5c3b28; font-weight: 500;">
+                🌴 Each bottle carries the rich heritage of Nigerian palm oil, carefully sourced from trusted farms 
+                and traditionally processed with full traceability from source to shelf.
+              </p>
             </div>
 
             <div class="order-details">
@@ -328,12 +359,12 @@ function sendOrderStatusUpdateEmail(order, previousStatus, newStatus) {
                   </tr>
                 </thead>
                 <tbody>
-                  ${order.items?.map(item => `
+                  ${orderItems.map(item => `
                     <tr>
-                      <td>${item.name}</td>
-                      <td>${item.size}</td>
-                      <td>${item.quantity}</td>
-                      <td>₦${item.total?.toLocaleString()}</td>
+                      <td>${item.name || 'Product'}</td>
+                      <td>${item.size || 'N/A'}</td>
+                      <td>${item.quantity || 1}</td>
+                      <td>₦${(item.total || 0)?.toLocaleString()}</td>
                     </tr>
                   `).join('')}
                 </tbody>
@@ -442,7 +473,19 @@ router.put("/:id/status", verifyAdmin, (req, res) => {
 
       // Send status update email if delivery status changed
       if (delivery_status && delivery_status !== previousStatus) {
-        sendOrderStatusUpdateEmail(updatedOrder, previousStatus, delivery_status);
+        // Get the complete order data for email
+        const completeOrderQuery = "SELECT * FROM orders WHERE id = $1";
+        db.query(completeOrderQuery, [id], (err, completeResult) => {
+          if (err) {
+            console.error("Error fetching complete order for email:", err);
+            return;
+          }
+
+          if (completeResult.rows.length > 0) {
+            const completeOrder = completeResult.rows[0];
+            sendOrderStatusUpdateEmail(completeOrder, previousStatus, delivery_status);
+          }
+        });
       }
 
       res.json(updatedOrder);
